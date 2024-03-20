@@ -46,7 +46,7 @@ def build_user_instruction(instruction: str):
 
 
 def build_assistant_instruction(answer: str):
-    return f"""{answer}<|im_end|\n"""
+    return f"""{answer}{im_end}\n"""
 
 
 class DataInfo(tp.TypedDict):
@@ -91,8 +91,8 @@ def build_inputs(data_info: DataInfo, tokenizer, max_seq_len=8192, max_rounds=8)
     for idx, single_round in enumerate(rounds):
         if single_round['role'] != 'assistant':
             continue
+        content_str_list = []
         for pre_round in rounds[:idx]:
-            content_str_list = []
             if pre_round['role'] == 'assistant':
                 content_str_list.append(build_assistant_instruction(pre_round['content']))
             elif pre_round['role'] == 'user':
@@ -101,7 +101,7 @@ def build_inputs(data_info: DataInfo, tokenizer, max_seq_len=8192, max_rounds=8)
                 content_str_list.append(build_system_instruction(pre_round['content']))
             else:
                 return None
-            content_str_list.append(build_assistant_instruction(single_round['content']))
+        content_str_list.append(build_assistant_instruction(single_round['content']))
         instruction = ''.join(content_str_list[:-1])
         answer = ''.join(content_str_list[-1])
         ifd_input_list = tokenize_inputs(instruction, answer, tokenizer, max_seq_len)
@@ -125,11 +125,9 @@ def get_raw_data_info(dataset_root: Path, dataset_saved_root: Path, num: int = -
                 if num != -1 and idx >= num:
                     break
                 data_infos.append(DataInfo(source_path=source_path, saved_path=saved_path, content=data, ifd_score=None, idx=idx))
-    pad_num = ceil(len(data_infos) / world_size) * world_size - len(data_infos)
-    for i in range(pad_num):
-        data_infos.append(data_infos[i])
+    length = len(data_infos)
     data_infos = data_infos[rank::world_size]
-    return data_infos
+    return data_infos, length
 
 
 def inference(ifd_inputs: tp.List[IFDInputs], model):
@@ -252,9 +250,7 @@ def main():
 
     model = AutoModelForCausalLM.from_pretrained(args.model_path, trust_remote_code=True).cuda()
     tokenizer = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
-
-
-    for dataset_path in data_root.iterdir():
+    for dataset_path in dataset_paths:
         dataset_saved_root = save_root / dataset_path.name
         data_infos = get_raw_data_info(dataset_path, dataset_saved_root, args.num)
         if local_rank == 0:
@@ -265,9 +261,10 @@ def main():
             ifd_inputs = build_inputs(data_info, tokenizer, args.max_seq_len, args.max_rounds)
             if not ifd_inputs:
                 logger.warning(f"Failed to build inputs for {data_info['source_path']} {data_info['idx']}")
-                continue
-            ifd_score = inference(ifd_inputs, model)
-            data_info['ifd_score'] = ifd_score
+                data_info['ifd_score'] = None
+            else:
+                ifd_score = inference(ifd_inputs, model)
+                data_info['ifd_score'] = ifd_score
 
             data_info = {k: str(v) if isinstance(v, Path) else v for k, v in data_info.items()}
             with lock:
