@@ -125,9 +125,8 @@ def get_raw_data_info(dataset_root: Path, dataset_saved_root: Path, num: int = -
                 if num != -1 and idx >= num:
                     break
                 data_infos.append(DataInfo(source_path=source_path, saved_path=saved_path, content=data, ifd_score=None, idx=idx))
-    length = len(data_infos)
     data_infos = data_infos[rank::world_size]
-    return data_infos, length
+    return data_infos
 
 
 def inference(ifd_inputs: tp.List[IFDInputs], model):
