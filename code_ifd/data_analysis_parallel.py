@@ -247,8 +247,8 @@ def main():
             dataset_paths.remove(path)
             dataset_paths.append(path)
 
-    model = AutoModelForCausalLM.from_pretrained(args.model_path, trust_remote_code=True).cuda()
     tokenizer = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(args.model_path, trust_remote_code=True).cuda()
     for dataset_path in dataset_paths:
         dataset_saved_root = save_root / dataset_path.name
         data_infos = get_raw_data_info(dataset_path, dataset_saved_root, args.num)
